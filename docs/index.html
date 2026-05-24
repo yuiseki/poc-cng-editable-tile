@@ -31,6 +31,27 @@
     button { margin-top: 4px; width: 100%; font-size: 12px; cursor: pointer; padding: 4px; }
     #status.ok  { color: green; }
     #status.err { color: red; }
+    #history-section { margin-top: 8px; border-top: 1px solid #ddd; padding-top: 6px; display: none; }
+    #history-section h2 { margin: 0 0 4px; font-size: 11px; color: #888; text-transform: uppercase; }
+    #history-list { max-height: 160px; overflow-y: auto; margin-top: 4px; }
+    .hist-row {
+      display: flex; align-items: flex-start; gap: 4px;
+      padding: 3px 0; border-bottom: 1px solid #eee; font-size: 11px;
+    }
+    .hist-row:last-child { border-bottom: none; }
+    .hist-meta { flex: 1; min-width: 0; }
+    .hist-id { color: #aaa; }
+    .hist-action { font-weight: 600; }
+    .hist-action.upsert_tags { color: #0066cc; }
+    .hist-action.delete { color: #cc2200; }
+    .hist-action.restore { color: #44bb44; }
+    .hist-tags { color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hist-time { color: #aaa; font-size: 10px; }
+    .btn-revert {
+      flex-shrink: 0; font-size: 10px; padding: 2px 5px; cursor: pointer;
+      background: #fff; border: 1px solid #bbb; border-radius: 3px; white-space: nowrap;
+    }
+    .btn-revert:hover { background: #fee; border-color: #c00; color: #c00; }
     #legend {
       position: absolute; bottom: 30px; left: 8px; z-index: 1;
       background: rgba(255,255,255,0.92); padding: 6px 10px; border-radius: 6px;
@@ -67,6 +88,10 @@
     </div>
     <button id="btn-submit">Apply Edit</button>
     <button id="btn-reload">Reload Tiles</button>
+  </div>
+  <div id="history-section">
+    <h2>Edit History</h2>
+    <div id="history-list"></div>
   </div>
 </div>
 <div id="legend">
@@ -209,7 +234,78 @@ function selectFeature(props, layerType) {
   }
   setStatus(`Selected ${layerType} osm_id: ${props.osm_id}`);
   showFeatureInfo(props);
+  loadHistory('way', props.osm_id);
 }
+
+async function loadHistory(osmType, osmId) {
+  const section = document.getElementById('history-section');
+  const list = document.getElementById('history-list');
+  list.innerHTML = '<span style="color:#aaa">読み込み中…</span>';
+  section.style.display = 'block';
+
+  try {
+    const res = await fetch(`${TILE_API}/edits/events/${osmType}/${osmId}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const events = await res.json();
+
+    if (events.length === 0) {
+      list.innerHTML = '<span style="color:#aaa">編集履歴なし</span>';
+      return;
+    }
+
+    list.innerHTML = '';
+    for (const ev of events) {
+      const tagsStr = Object.entries(ev.tags).map(([k, v]) => `${k}=${v}`).join(', ') || '—';
+      const timeStr = ev.created_at.replace('T', ' ').slice(0, 19);
+
+      const row = document.createElement('div');
+      row.className = 'hist-row';
+      row.innerHTML = `
+        <div class="hist-meta">
+          <span class="hist-id">#${ev.id}</span>
+          <span class="hist-action ${ev.action}"> ${ev.action}</span>
+          <div class="hist-tags" title="${tagsStr}">${tagsStr}</div>
+          <div class="hist-time">${timeStr}</div>
+        </div>
+        <button class="btn-revert" data-event-id="${ev.id}" data-osm-type="${ev.osm_type}" data-osm-id="${ev.osm_id}">↩ 戻す</button>
+      `;
+      list.appendChild(row);
+    }
+  } catch (e) {
+    list.innerHTML = `<span style="color:red">取得失敗: ${e.message}</span>`;
+  }
+}
+
+document.getElementById('history-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.btn-revert');
+  if (!btn) return;
+  const eventId = parseInt(btn.dataset.eventId, 10);
+  const osmType = btn.dataset.osmType;
+  const osmId = parseInt(btn.dataset.osmId, 10);
+
+  if (!confirm(`event #${eventId} の直前の状態に戻しますか？`)) return;
+
+  setStatus('Reverting…');
+  try {
+    const res = await fetch(`${TILE_API}/edits/revert-event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_id: eventId }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    setStatus(`OK: reverted to before event #${eventId}`, 'ok');
+    reloadTiles();
+    await loadHistory(osmType, osmId);
+    // Refresh feature info
+    try {
+      const r = await fetch(`${TILE_API}/edits/${osmType}/${osmId}`);
+      if (r.ok) { const d = await r.json(); showFeatureInfo({ ...d.tags }); }
+      else featureInfoEl.textContent = '(タグなし)';
+    } catch { /* ignore */ }
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, 'err');
+  }
+});
 
 map.on('click', 'building-fill', (e) => selectFeature(e.features[0].properties, 'building'));
 map.on('click', 'road',          (e) => selectFeature(e.features[0].properties, 'road'));
@@ -247,7 +343,7 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     setStatus(`OK: ${action} applied`, 'ok');
     reloadTiles();
-    // refresh feature info after tile reload settles
+    // refresh feature info and history after tile reload settles
     setTimeout(async () => {
       const osmId = parseInt(document.getElementById('osm-id').value, 10);
       if (!osmId) return;
@@ -255,6 +351,7 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
         const r = await fetch(`${TILE_API}/edits/way/${osmId}`);
         if (r.ok) { const d = await r.json(); showFeatureInfo({ ...d.tags }); }
       } catch { /* ignore */ }
+      await loadHistory('way', osmId);
     }, 500);
   } catch (err) {
     setStatus(`Error: ${err.message}`, 'err');

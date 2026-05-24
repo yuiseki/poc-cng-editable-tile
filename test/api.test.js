@@ -245,6 +245,89 @@ test('upserted tags appear in tile response properties', async () => {
   assert.equal(found['disaster:confidence'], '0.9');
 });
 
+test('GET /edits/events returns history in descending order', async () => {
+  // Apply two sequential edits to feature 111111
+  await app.inject({
+    method: 'POST', url: '/edit',
+    payload: { osm_type: 'way', osm_id: 111111, action: 'upsert_tags', tags: { 'disaster:damage': 'minor' } },
+  });
+  await app.inject({
+    method: 'POST', url: '/edit',
+    payload: { osm_type: 'way', osm_id: 111111, action: 'upsert_tags', tags: { 'disaster:damage': 'moderate' } },
+  });
+
+  const res = await app.inject({ method: 'GET', url: '/edits/events/way/111111' });
+  assert.equal(res.statusCode, 200);
+  const events = JSON.parse(res.payload);
+  assert.ok(Array.isArray(events));
+  assert.ok(events.length >= 2);
+  // Descending order: most recent first
+  assert.ok(events[0].id > events[1].id);
+  assert.equal(events[0].tags['disaster:damage'], 'moderate');
+});
+
+test('POST /edits/revert-event rolls back to the state before the given event', async () => {
+  // Start fresh with feature 333333
+  await app.inject({
+    method: 'POST', url: '/edit',
+    payload: { osm_type: 'way', osm_id: 333333, action: 'upsert_tags', tags: { 'disaster:damage': 'minor' } },
+  });
+  await app.inject({
+    method: 'POST', url: '/edit',
+    payload: { osm_type: 'way', osm_id: 333333, action: 'upsert_tags', tags: { 'disaster:damage': 'major' } },
+  });
+
+  // Get history; most recent event is first
+  const histRes = await app.inject({ method: 'GET', url: '/edits/events/way/333333' });
+  const events = JSON.parse(histRes.payload);
+  const latestEventId = events[0].id; // 'major'
+
+  // Revert the latest event → should roll back to 'minor'
+  const revertRes = await app.inject({
+    method: 'POST', url: '/edits/revert-event',
+    payload: { event_id: latestEventId },
+  });
+  assert.equal(revertRes.statusCode, 200);
+  const body = JSON.parse(revertRes.payload);
+  assert.equal(body.ok, true);
+
+  // Current edit for 333333 should now be 'minor'
+  const editRes = await app.inject({ method: 'GET', url: '/edits/way/333333' });
+  assert.equal(editRes.statusCode, 200);
+  const edit = JSON.parse(editRes.payload);
+  assert.equal(edit.tags['disaster:damage'], 'minor');
+});
+
+test('POST /edits/revert-event with no prior event restores the feature', async () => {
+  // Feature 444444: single edit, then revert it → should restore (remove from current_feature_edits)
+  await app.inject({
+    method: 'POST', url: '/edit',
+    payload: { osm_type: 'way', osm_id: 444444, action: 'upsert_tags', tags: { 'disaster:damage': 'none' } },
+  });
+
+  const histRes = await app.inject({ method: 'GET', url: '/edits/events/way/444444' });
+  const events = JSON.parse(histRes.payload);
+  const onlyEventId = events[0].id;
+
+  const revertRes = await app.inject({
+    method: 'POST', url: '/edits/revert-event',
+    payload: { event_id: onlyEventId },
+  });
+  assert.equal(revertRes.statusCode, 200);
+
+  // Feature should now have no edit (404)
+  const editRes = await app.inject({ method: 'GET', url: '/edits/way/444444' });
+  assert.equal(editRes.statusCode, 404);
+});
+
+test('POST /edits/revert-event with unknown event_id returns 404', async () => {
+  const res = await app.inject({
+    method: 'POST', url: '/edits/revert-event',
+    payload: { event_id: 999999 },
+  });
+  assert.equal(res.statusCode, 404);
+});
+
 test('edits.sqlite auto-initializes when missing', () => {
   const freshPath = path.join(tmpDir, 'fresh-edits.sqlite');
   assert.ok(!fs.existsSync(freshPath));

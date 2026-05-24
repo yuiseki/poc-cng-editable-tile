@@ -2,7 +2,7 @@
 
 const Fastify = require('fastify');
 const cors = require('@fastify/cors');
-const { openEditsDb, getAllCurrentEdits, getFeatureEdit, buildApplyEdit } = require('./db');
+const { openEditsDb, getAllCurrentEdits, getFeatureEdit, buildApplyEdit, getEventHistory, buildRevertEvent } = require('./db');
 const { openMbtiles, getTile } = require('./mbtiles');
 const { mergeTile } = require('./tile');
 
@@ -16,6 +16,7 @@ const VALID_ACTIONS = new Set(['upsert_tags', 'delete', 'restore']);
 function buildApp({ mbtilesPath, editsPath } = {}) {
   const editsDb = openEditsDb(editsPath || EDITS_SQLITE_PATH);
   const applyEdit = buildApplyEdit(editsDb);
+  const revertEvent = buildRevertEvent(editsDb);
 
   let mbtilesDb = null;
   try {
@@ -96,6 +97,40 @@ function buildApp({ mbtilesPath, editsPath } = {}) {
       updated_at: row.updated_at,
       version: row.version,
     };
+  });
+
+  app.get('/edits/events/:osm_type/:osm_id', async (req, reply) => {
+    const { osm_type, osm_id } = req.params;
+    const events = getEventHistory(editsDb, osm_type, parseInt(osm_id, 10));
+    return events.map(e => ({
+      id: e.id,
+      osm_type: e.osm_type,
+      osm_id: e.osm_id,
+      action: e.action,
+      tags: JSON.parse(e.tags_json),
+      created_at: e.created_at,
+    }));
+  });
+
+  app.post('/edits/revert-event', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['event_id'],
+        properties: {
+          event_id: { type: 'integer' },
+          user_id: { type: 'string' },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const { event_id, user_id } = req.body;
+    try {
+      const result = revertEvent(event_id, user_id);
+      return { ok: true, ...result };
+    } catch (e) {
+      return reply.code(e.statusCode || 500).send({ error: e.message });
+    }
   });
 
   return { app, editsDb };
