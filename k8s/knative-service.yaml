@@ -29,7 +29,7 @@ spec:
             - name: EDITS_SQLITE_PATH
               value: /edits/edits.sqlite
             - name: BUILDINGS_LAYER_NAME
-              value: buildings
+              value: building
           volumeMounts:
             - name: edits
               mountPath: /edits
