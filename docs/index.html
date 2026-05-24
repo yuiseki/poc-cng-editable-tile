@@ -1,235 +1,185 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8">
   <title>poc-cng-editable-tile</title>
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <meta name="viewport" content="initial-scale=1, width=device-width">
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #111; color: #eee; height: 100vh; overflow: hidden; }
-    #map { width: 100%; height: 100vh; }
-
+    html, body, #map { margin: 0; padding: 0; height: 100%; }
     #panel {
-      position: absolute;
-      top: 12px; left: 12px;
-      z-index: 10;
-      background: rgba(18, 18, 28, 0.92);
-      border: 1px solid #334;
-      border-radius: 8px;
-      padding: 12px 16px;
-      min-width: 260px;
+      position: absolute; top: 8px; left: 8px; z-index: 1;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 8px 10px; border-radius: 6px;
+      font: 12px/1.4 -apple-system, system-ui, sans-serif;
       max-width: 320px;
-      backdrop-filter: blur(4px);
-      font-size: 13px;
-      line-height: 1.6;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     }
-    #panel h1 { font-size: 13px; font-weight: 600; color: #88aaff; margin-bottom: 10px; }
-
-    .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-    .dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
-    .label { font-size: 12px; color: #aab; }
-
-    #edit-section { margin-top: 12px; border-top: 1px solid #334; padding-top: 10px; }
-    #edit-section h2 { font-size: 11px; color: #668; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
-    input[type="number"], input[type="text"], select {
-      background: #1a1a2a; border: 1px solid #445; border-radius: 4px;
-      color: #eee; padding: 4px 8px; font-size: 12px; width: 100%; outline: none;
-    }
-    input:focus, select:focus { border-color: #88aaff; }
-    .field { margin-bottom: 6px; }
-    .field label { display: block; font-size: 11px; color: #668; margin-bottom: 2px; }
-    button {
-      background: #2a2a4a; border: 1px solid #445; border-radius: 4px;
-      color: #aac; padding: 5px 12px; font-size: 12px; cursor: pointer;
-      transition: background 0.15s; width: 100%; margin-top: 4px;
-    }
-    button:hover { background: #3a3a6a; color: #ccf; }
-    #status { font-size: 11px; color: #668; margin-top: 6px; min-height: 16px; }
-    #status.ok  { color: #6a6; }
-    #status.err { color: #f66; }
-    textarea {
-      background: #1a1a2a; border: 1px solid #445; border-radius: 4px;
-      color: #eee; padding: 4px 8px; font-size: 11px; width: 100%;
-      outline: none; font-family: monospace; resize: vertical;
-    }
-    textarea:focus { border-color: #88aaff; }
+    #panel h1 { margin: 0 0 6px 0; font-size: 12px; }
+    .row { margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+    .row label { white-space: nowrap; }
+    .row input, .row select { flex: 1; min-width: 0; box-sizing: border-box; font-size: 12px; }
+    #status { margin-top: 4px; color: #555; }
+    #edit-section { margin-top: 8px; border-top: 1px solid #ddd; padding-top: 6px; }
+    #edit-section h2 { margin: 0 0 4px; font-size: 11px; color: #888; text-transform: uppercase; }
+    textarea { width: 100%; box-sizing: border-box; font-size: 11px; font-family: monospace; resize: vertical; }
+    button { margin-top: 4px; width: 100%; font-size: 12px; cursor: pointer; padding: 4px; }
+    #status.ok  { color: green; }
+    #status.err { color: red; }
   </style>
 </head>
 <body>
-  <div id="map"></div>
-  <div id="panel">
-    <h1>poc-cng-editable-tile</h1>
-    <div class="row"><div class="dot" style="background:#888;"></div><div class="label">HOTOSM Imagery (raster)</div></div>
-    <div class="row"><div class="dot" style="background:#88aaff;border:1px solid #4466cc;"></div><div class="label">Buildings (vector edit overlay)</div></div>
-
-    <div id="edit-section">
-      <h2>Edit Feature</h2>
-      <div class="field">
-        <label>osm_id (クリックで自動入力)</label>
-        <input type="number" id="osm-id" placeholder="例: 123456789" />
-      </div>
-      <div class="field">
-        <label>action</label>
-        <select id="action">
-          <option value="upsert_tags">upsert_tags</option>
-          <option value="delete">delete</option>
-          <option value="restore">restore</option>
-        </select>
-      </div>
-      <div class="field" id="tags-field">
-        <label>tags (JSON)</label>
-        <textarea id="tags" rows="3">{"disaster:damage":"major","disaster:confidence":"0.8"}</textarea>
-      </div>
-      <button id="btn-submit">Apply Edit</button>
-      <button id="btn-reload" style="margin-top:4px;background:#1a2a1a;border-color:#363;color:#8a8;">Reload Tiles</button>
-      <div id="status">Map loaded. Click a building to select.</div>
+<div id="panel">
+  <h1>poc-cng-editable-tile</h1>
+  <div id="status">Loading…</div>
+  <div id="edit-section">
+    <h2>Edit Feature</h2>
+    <div class="row">
+      <label>osm_id</label>
+      <input id="osm-id" type="number" placeholder="例: 123456789" />
     </div>
+    <div class="row">
+      <label>action</label>
+      <select id="action">
+        <option value="upsert_tags">upsert_tags</option>
+        <option value="delete">delete</option>
+        <option value="restore">restore</option>
+      </select>
+    </div>
+    <div id="tags-row" class="row" style="flex-direction:column;align-items:stretch;">
+      <label>tags (JSON)</label>
+      <textarea id="tags" rows="3">{"disaster:damage":"major","disaster:confidence":"0.8"}</textarea>
+    </div>
+    <button id="btn-submit">Apply Edit</button>
+    <button id="btn-reload">Reload Tiles</button>
   </div>
+</div>
+<div id="map"></div>
 
-  <script>
-    const TILE_API  = 'http://poc-cng-editable-tile.yuiseki.com';
-    const IMAGERY   = 'https://hotosm-imagery-tile.yuiseki.com';
-    const CENTER    = [139.075259, 35.118231];
-    const ZOOM      = 16;
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const TILE_API = 'http://poc-cng-editable-tile.yuiseki.com';
+const IMAGERY  = 'https://hotosm-imagery-tile.yuiseki.com';
 
-    // ── map ────────────────────────────────────────────────────────────────
-    const map = new maplibregl.Map({
-      container: 'map',
-      style: {
-        version: 8,
-        sources: {
-          imagery: {
-            type: 'raster',
-            tiles: [`${IMAGERY}/{z}/{x}/{y}.png`],
-            tileSize: 256,
-            minzoom: 0,
-            maxzoom: 22,
-          },
-          editable: {
-            type: 'vector',
-            tiles: [`${TILE_API}/tiles/{z}/{x}/{y}`],
-            minzoom: 0,
-            maxzoom: 14,
-          },
-        },
-        layers: [
-          { id: 'imagery', type: 'raster', source: 'imagery' },
-          {
-            id: 'building-fill',
-            type: 'fill',
-            source: 'editable',
-            'source-layer': 'building',
-            paint: {
-              'fill-color': '#88aaff',
-              'fill-opacity': 0.35,
-            },
-          },
-          {
-            id: 'building-outline',
-            type: 'line',
-            source: 'editable',
-            'source-layer': 'building',
-            paint: {
-              'line-color': '#88aaff',
-              'line-width': 1.2,
-              'line-opacity': 0.8,
-            },
-          },
-          {
-            id: 'building-fill-selected',
-            type: 'fill',
-            source: 'editable',
-            'source-layer': 'building',
-            filter: ['==', ['get', 'osm_id'], -1],
-            paint: {
-              'fill-color': '#ffaa44',
-              'fill-opacity': 0.6,
-            },
-          },
-          {
-            id: 'building-fill-deleted',
-            type: 'fill',
-            source: 'editable',
-            'source-layer': 'building',
-            filter: ['==', ['get', 'disaster:damage'], 'deleted'],
-            paint: {
-              'fill-color': '#ff4444',
-              'fill-opacity': 0.5,
-            },
-          },
-        ],
-      },
-      center: CENTER,
-      zoom: ZOOM,
+// STAC item 60e5afbe5bc2dc00058bbe06 — Atami / Izusan 2021 debris-flow
+const BBOX = [139.068869, 35.112867, 139.081648, 35.123595];
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tile.yuiseki.net/styles/osm-fiord/style.json',
+  center: [(BBOX[0] + BBOX[2]) / 2, (BBOX[1] + BBOX[3]) / 2],
+  zoom: 14,
+  hash: true,
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+const statusEl = document.getElementById('status');
+function setStatus(msg, cls = '') {
+  statusEl.textContent = msg;
+  statusEl.className = cls;
+}
+
+map.on('style.load', () => {
+  // 1. HOTOSM Imagery raster overlay
+  map.addSource('imagery', {
+    type: 'raster',
+    tiles: [`${IMAGERY}/tiles/{z}/{x}/{y}.png`],
+    tileSize: 512,
+    attribution: 'Imagery © HOTOSM / OpenAerialMap contributors',
+  });
+  map.addLayer({ id: 'imagery-layer', type: 'raster', source: 'imagery' });
+
+  // 2. Editable vector tiles
+  map.addSource('editable', {
+    type: 'vector',
+    tiles: [`${TILE_API}/tiles/{z}/{x}/{y}`],
+    minzoom: 0,
+    maxzoom: 14,
+  });
+
+  map.addLayer({
+    id: 'building-fill',
+    type: 'fill',
+    source: 'editable',
+    'source-layer': 'building',
+    paint: { 'fill-color': '#4488ff', 'fill-opacity': 0.3 },
+  });
+  map.addLayer({
+    id: 'building-outline',
+    type: 'line',
+    source: 'editable',
+    'source-layer': 'building',
+    paint: { 'line-color': '#4488ff', 'line-width': 1.2, 'line-opacity': 0.9 },
+  });
+  // Highlight selected feature
+  map.addLayer({
+    id: 'building-selected',
+    type: 'fill',
+    source: 'editable',
+    'source-layer': 'building',
+    filter: ['==', ['get', 'osm_id'], -1],
+    paint: { 'fill-color': '#ffaa00', 'fill-opacity': 0.6 },
+  });
+
+  // Fit to STAC item bbox
+  map.fitBounds([[BBOX[0], BBOX[1]], [BBOX[2], BBOX[3]]], { padding: 40, duration: 0 });
+  setStatus('Ready');
+});
+
+// Click to select building
+map.on('click', 'building-fill', (e) => {
+  const props = e.features[0].properties;
+  if (props.osm_id != null) {
+    document.getElementById('osm-id').value = props.osm_id;
+    map.setFilter('building-selected', ['==', ['get', 'osm_id'], props.osm_id]);
+    setStatus(`Selected osm_id: ${props.osm_id}`);
+  } else {
+    setStatus('この feature に osm_id がありません');
+  }
+});
+map.on('mouseenter', 'building-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+map.on('mouseleave', 'building-fill', () => { map.getCanvas().style.cursor = ''; });
+
+// action select → show/hide tags field
+const actionSel = document.getElementById('action');
+const tagsRow   = document.getElementById('tags-row');
+actionSel.addEventListener('change', () => {
+  tagsRow.style.display = actionSel.value === 'upsert_tags' ? '' : 'none';
+});
+
+// Apply edit
+document.getElementById('btn-submit').addEventListener('click', async () => {
+  const osmId = parseInt(document.getElementById('osm-id').value, 10);
+  const action = actionSel.value;
+  if (!osmId) { setStatus('osm_id を入力してください', 'err'); return; }
+
+  let tags = {};
+  if (action === 'upsert_tags') {
+    try { tags = JSON.parse(document.getElementById('tags').value); }
+    catch { setStatus('tags JSON が不正です', 'err'); return; }
+  }
+
+  setStatus('Saving…');
+  try {
+    const res = await fetch(`${TILE_API}/edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ osm_type: 'way', osm_id: osmId, action, tags }),
     });
-    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    setStatus(`OK: ${action} applied`, 'ok');
+    reloadTiles();
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, 'err');
+  }
+});
 
-    // ── UI helpers ──────────────────────────────────────────────────────────
-    const actionSel   = document.getElementById('action');
-    const tagsField   = document.getElementById('tags-field');
-    const statusEl    = document.getElementById('status');
-
-    function setStatus(msg, cls = '') {
-      statusEl.textContent = msg;
-      statusEl.className = cls;
-    }
-
-    actionSel.addEventListener('change', () => {
-      tagsField.style.display = actionSel.value === 'upsert_tags' ? '' : 'none';
-    });
-
-    // ── click to select building ────────────────────────────────────────────
-    map.on('click', 'building-fill', (e) => {
-      const props = e.features[0].properties;
-      const osmId = props.osm_id;
-      if (osmId != null) {
-        document.getElementById('osm-id').value = osmId;
-        map.setFilter('building-fill-selected', ['==', ['get', 'osm_id'], osmId]);
-        setStatus(`Selected osm_id: ${osmId}`);
-      } else {
-        setStatus('この feature に osm_id がありません（planetiler 基本スキーマ）', 'err');
-      }
-    });
-    map.on('mouseenter', 'building-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'building-fill', () => { map.getCanvas().style.cursor = ''; });
-
-    // ── apply edit ─────────────────────────────────────────────────────────
-    document.getElementById('btn-submit').addEventListener('click', async () => {
-      const osmId = parseInt(document.getElementById('osm-id').value, 10);
-      const action = actionSel.value;
-      if (!osmId) { setStatus('osm_id を入力してください', 'err'); return; }
-
-      let tags = {};
-      if (action === 'upsert_tags') {
-        try { tags = JSON.parse(document.getElementById('tags').value); }
-        catch { setStatus('tags の JSON が不正です', 'err'); return; }
-      }
-
-      setStatus('Saving…');
-      try {
-        const res = await fetch(`${TILE_API}/edit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ osm_type: 'way', osm_id: osmId, action, tags }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        setStatus(`OK: ${action} applied to osm_id ${osmId}`, 'ok');
-        reloadTiles();
-      } catch (err) {
-        setStatus(`Error: ${err.message}`, 'err');
-      }
-    });
-
-    // ── reload tiles ───────────────────────────────────────────────────────
-    function reloadTiles() {
-      const src = map.getSource('editable');
-      if (!src) return;
-      const ts = Date.now();
-      src.setTiles([`${TILE_API}/tiles/{z}/{x}/{y}?t=${ts}`]);
-    }
-    document.getElementById('btn-reload').addEventListener('click', reloadTiles);
-  </script>
+// Reload tiles (cache bust)
+function reloadTiles() {
+  const src = map.getSource('editable');
+  if (src) src.setTiles([`${TILE_API}/tiles/{z}/{x}/{y}?t=${Date.now()}`]);
+}
+document.getElementById('btn-reload').addEventListener('click', reloadTiles);
+</script>
 </body>
 </html>

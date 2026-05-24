@@ -1,6 +1,7 @@
 'use strict';
 
 const Fastify = require('fastify');
+const cors = require('@fastify/cors');
 const { openEditsDb, getAllCurrentEdits, getFeatureEdit, buildApplyEdit } = require('./db');
 const { openMbtiles, getTile } = require('./mbtiles');
 const { mergeTile } = require('./tile');
@@ -25,6 +26,7 @@ function buildApp({ mbtilesPath, editsPath } = {}) {
   }
 
   const app = Fastify({ logger: true });
+  app.register(cors, { origin: true });
 
   app.get('/healthz', async () => ({ ok: true }));
 
