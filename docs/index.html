@@ -144,7 +144,7 @@ map.on('style.load', () => {
     'source-layer': 'building',
     paint: { 'line-color': damageColor, 'line-width': 1.2, 'line-opacity': 0.9 },
   });
-  // Highlight selected feature
+  // Highlight selected building
   map.addLayer({
     id: 'building-selected',
     type: 'fill',
@@ -152,6 +152,28 @@ map.on('style.load', () => {
     'source-layer': 'building',
     filter: ['==', ['get', 'osm_id'], -1],
     paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.35 },
+  });
+
+  // Road layer — colored by disaster:damage
+  map.addLayer({
+    id: 'road',
+    type: 'line',
+    source: 'editable',
+    'source-layer': 'road',
+    paint: {
+      'line-color': damageColor,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.5, 14, 4],
+      'line-opacity': 0.9,
+    },
+  });
+  // Highlight selected road
+  map.addLayer({
+    id: 'road-selected',
+    type: 'line',
+    source: 'editable',
+    'source-layer': 'road',
+    filter: ['==', ['get', 'osm_id'], -1],
+    paint: { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.6 },
   });
 
   // Fit to STAC item bbox
@@ -174,20 +196,27 @@ function showFeatureInfo(props) {
   featureInfoEl.style.display = 'block';
 }
 
-// Click to select building
-map.on('click', 'building-fill', (e) => {
-  const props = e.features[0].properties;
-  if (props.osm_id != null) {
-    document.getElementById('osm-id').value = props.osm_id;
+function selectFeature(props, layerType) {
+  if (props.osm_id == null) { setStatus('この feature に osm_id がありません'); return; }
+  document.getElementById('osm-id').value = props.osm_id;
+  // clear all highlights
+  map.setFilter('building-selected', ['==', ['get', 'osm_id'], -1]);
+  map.setFilter('road-selected',     ['==', ['get', 'osm_id'], -1]);
+  if (layerType === 'building') {
     map.setFilter('building-selected', ['==', ['get', 'osm_id'], props.osm_id]);
-    setStatus(`Selected osm_id: ${props.osm_id}`);
-    showFeatureInfo(props);
   } else {
-    setStatus('この feature に osm_id がありません');
+    map.setFilter('road-selected', ['==', ['get', 'osm_id'], props.osm_id]);
   }
-});
+  setStatus(`Selected ${layerType} osm_id: ${props.osm_id}`);
+  showFeatureInfo(props);
+}
+
+map.on('click', 'building-fill', (e) => selectFeature(e.features[0].properties, 'building'));
+map.on('click', 'road',          (e) => selectFeature(e.features[0].properties, 'road'));
 map.on('mouseenter', 'building-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
 map.on('mouseleave', 'building-fill', () => { map.getCanvas().style.cursor = ''; });
+map.on('mouseenter', 'road', () => { map.getCanvas().style.cursor = 'pointer'; });
+map.on('mouseleave', 'road', () => { map.getCanvas().style.cursor = ''; });
 
 // action select → show/hide tags field
 const actionSel = document.getElementById('action');

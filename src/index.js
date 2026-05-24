@@ -8,7 +8,6 @@ const { mergeTile } = require('./tile');
 
 const BASE_MBTILES_PATH = process.env.BASE_MBTILES_PATH || '/data/base.mbtiles';
 const EDITS_SQLITE_PATH = process.env.EDITS_SQLITE_PATH || '/data/edits.sqlite';
-const BUILDINGS_LAYER_NAME = process.env.BUILDINGS_LAYER_NAME || 'buildings';
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
@@ -48,7 +47,7 @@ function buildApp({ mbtilesPath, editsPath } = {}) {
     if (!rawTile) return reply.code(404).send({ error: 'tile not found' });
 
     const editsMap = getAllCurrentEdits(editsDb);
-    const merged = mergeTile(rawTile, editsMap, BUILDINGS_LAYER_NAME);
+    const merged = mergeTile(rawTile, editsMap);
 
     reply
       .header('Content-Type', 'application/vnd.mapbox-vector-tile')

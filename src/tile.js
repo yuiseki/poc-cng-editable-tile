@@ -7,12 +7,12 @@ const { gunzipSync, gzipSync } = require('node:zlib');
 
 /**
  * Merge edits into a raw MVT buffer.
+ * Applies to all layers that carry osm_id/osm_type properties.
  * @param {Buffer} tileBuffer - raw tile data (possibly gzipped)
  * @param {Map} editsMap - Map keyed by "osm_type:osm_id" → {action, tags}
- * @param {string} layerName - name of the layer to apply edits to
  * @returns {Buffer} gzipped MVT
  */
-function mergeTile(tileBuffer, editsMap, layerName) {
+function mergeTile(tileBuffer, editsMap) {
   let data = tileBuffer;
   if (data[0] === 0x1f && data[1] === 0x8b) {
     data = gunzipSync(data);
@@ -23,20 +23,15 @@ function mergeTile(tileBuffer, editsMap, layerName) {
 
   for (const name of Object.keys(tile.layers)) {
     const layer = tile.layers[name];
-
-    if (name !== layerName) {
-      modifiedLayers[name] = layer;
-      continue;
-    }
-
     const features = [];
+
     for (let i = 0; i < layer.length; i++) {
       const feature = layer.feature(i);
       const props = feature.properties;
       const osmId = props.osm_id;
       const osmType = props.osm_type || 'way';
       const key = `${osmType}:${osmId}`;
-      const edit = editsMap.get(key);
+      const edit = osmId != null ? editsMap.get(key) : undefined;
 
       if (edit && edit.action === 'delete') continue;
 
