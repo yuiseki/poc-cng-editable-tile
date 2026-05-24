@@ -1,0 +1,48 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: poc-cng-editable-tile
+  namespace: knative-pool
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/max-scale: "1"
+        autoscaling.knative.dev/scale-down-delay: "300s"
+    spec:
+      containerConcurrency: 5
+      timeoutSeconds: 60
+      nodeSelector:
+        yuiseki.net/compute: "true"
+      containers:
+        - image: 192.168.0.90:5000/poc-cng-editable-tile:0.1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: HOME
+              value: /tmp
+            - name: BASE_MBTILES_PATH
+              value: /data/base.mbtiles
+            - name: EDITS_SQLITE_PATH
+              value: /data/edits.sqlite
+            - name: BUILDINGS_LAYER_NAME
+              value: buildings
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+              ephemeral-storage: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+              ephemeral-storage: "2Gi"
+      volumes:
+        - name: data
+          hostPath:
+            path: /data/poc-cng-editable-tile
+            type: DirectoryOrCreate
