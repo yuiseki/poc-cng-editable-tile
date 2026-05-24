@@ -15,7 +15,7 @@ spec:
       containerConcurrency: 5
       timeoutSeconds: 60
       containers:
-        - image: poc-cng-editable-tile:0.1.0
+        - image: poc-cng-editable-tile:0.2.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
