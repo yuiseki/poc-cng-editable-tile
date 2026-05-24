@@ -202,8 +202,10 @@ map.on('style.load', () => {
     paint: { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.6 },
   });
 
-  // Fit to STAC item bbox
-  map.fitBounds([[BBOX[0], BBOX[1]], [BBOX[2], BBOX[3]]], { padding: 40, duration: 0 });
+  // Fit to STAC item bbox only when no hash position is present in the URL
+  if (!location.hash) {
+    map.fitBounds([[BBOX[0], BBOX[1]], [BBOX[2], BBOX[3]]], { padding: 40, duration: 0 });
+  }
   setStatus('Ready');
 });
 
